@@ -1,41 +1,58 @@
 import requests
-import re
 import json
+import re
 from fastapi import FastAPI
 app = FastAPI()
-@app.get("/homepage")
-def get_playlist(url:str):
-    home_data=[]
-    headers = {"User-Agent": "Mozilla/5.0"}
-    html = requests.get(url, headers=headers).text
-
-    # Extract ytInitialData
-    m = re.search(r"ytInitialData\s*=\s*(\{.*?\});", html)
-    if not m:
-        raise Exception("ytInitialData not found")
-
-    data = json.loads(m.group(1))
-    print(data)
-    if "playnext" in url:
-        case1=True
-    else:
-        case1=False
-
-    if case1:
-        case = "playlistPanelVideoRenderer"
-        items = data["contents"]["twoColumnWatchNextResults"]["playlist"]["playlist"]["contents"]
-    else:
-        case= "playlistVideoRenderer"
-        items = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]["sectionListRenderer"][
-            "contents"][0]["itemSectionRenderer"]["contents"][0]["playlistVideoListRenderer"]["contents"]
-    for item in items:
-        if case1:
-            title=item[case]["title"]["simpleText"]
-        else:
-            title=item[case]["title"]["runs"][0]["text"]
-        Thumbnail=item[case]["thumbnail"]["thumbnails"][1]["url"]
-        Url=f"https://www.youtube.com/{item[case]["navigationEndpoint"]["commandMetadata"]["webCommandMetadata"]["url"]}"
-        home_data.append({"title":title,"thumbnail":Thumbnail,"url":Url})
-    return   {
-    "data": home_data,
+@app.get("/autocomplete/search")
+def parse_google_ac(q: str):
+    url = "https://suggestqueries-clients6.youtube.com/complete/search"
+    headers = {
+        "accept": "*/*",
+        "accept-language": "en-US,en;q=0.9",
+        "origin": "https://www.youtube.com",
+        "referer": "https://www.youtube.com/",
+        "user-agent": (
+            "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/143.0.0.0 Mobile Safari/537.36"
+        )
     }
+    params = {
+        "ds": "yt",
+        "hl": "en",
+        "gl": "in",
+        "client": "youtube",
+        "gs_ri": "youtube",
+        "tok": "iNaG2NDGF_Ti2dPRguRNIQ",
+        "h": "180",
+        "w": "320",
+        "ytvs": "1",
+        "gs_id": "2",
+        "q": f"{q}",
+        "cp": f"{len(q)}",
+    }
+
+    response = requests.get(url, params=params, headers=headers)
+
+    # 1️⃣ Extract JSON-like payload inside the function call
+    match = re.search(r'window\.google\.ac\.h\((.*)\)\s*$', response.text)
+    if not match:
+        raise ValueError("Invalid Google AC response format")
+
+    payload = match.group(1)
+
+    # 2️⃣ Parse JSON safely
+    data = json.loads(payload)
+
+    raw_suggestions = data[1]
+
+    # 4️⃣ Normalize suggestions
+    suggestions = []
+    for item in raw_suggestions:
+        suggestions.append({"text": item[0]})
+
+    return {
+        "suggestions": suggestions
+    }
+
+
